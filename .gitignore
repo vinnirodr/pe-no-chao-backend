@@ -1,0 +1,12 @@
+node_modules
+__pycache__
+.env
+.DS_Store
+dist
+build
+coverage
+.vscode
+.idea
+*.log
+postgres_data
+redis_data
