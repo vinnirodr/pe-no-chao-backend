@@ -3,7 +3,7 @@ const axios = require("axios");
 class FactChecker {
     constructor() {
         this.apiKey = process.env.PERPLEXITY_API_KEY;
-        this.model = "sonar-reasoning";
+        this.model = "sonar-pro";
     }
 
     async verify(text) {
