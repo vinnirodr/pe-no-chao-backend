@@ -10,6 +10,9 @@ const FactChecker = require("./services/FactChecker");
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Simple in-memory store so the frontend can display stats without a database
+const analysesStore = [];
+
 /* -----------------------------------------------------------
    ⭐ CORS SEM FALHA — AGORA FUNCIONA 100%
 ------------------------------------------------------------- */
@@ -46,8 +49,8 @@ const NLP_API_URL = process.env.NLP_API_URL || "http://localhost:5000";
 /* -----------------------------------------------------------
    🔵 Health check
 ------------------------------------------------------------- */
-app.get("/", (req, res) => {
-    res.json({ message: "Pé no Chão Backend API is running!" });
+app.get(["/", "/health"], (req, res) => {
+    res.json({ status: "ok" });
 });
 
 /* -----------------------------------------------------------
@@ -126,8 +129,15 @@ app.post("/api/v1/analyses", async (req, res) => {
             nlpData.premises.map(p => factChecker.verify(p.text))
         );
 
+        // Normalize response for the frontend expectations
+        const factCheckResponse = factCheckResults.map((result, index) => ({
+            ...result,
+            premise_index: index,
+            premise_text: result.text
+        }));
+
         // Overall assessment
-        const allPremisesVerified = factCheckResults.every(r => r.verified);
+        const allPremisesVerified = factCheckResponse.every(r => r.verified);
         let assessment = "SUSPEITO";
 
         if (logicResult.isValid && allPremisesVerified) {
@@ -138,14 +148,20 @@ app.post("/api/v1/analyses", async (req, res) => {
             assessment = "INCONCLUSIVO / FALSO";
         }
 
-        // Final response
-        res.json({
+        const analysisRecord = {
+            id: analysesStore.length + 1,
             input: text,
             nlp: nlpData,
             logic: logicResult,
-            fact_check: factCheckResults,
-            assessment
-        });
+            fact_check: factCheckResponse,
+            assessment,
+            created_at: new Date().toISOString()
+        };
+
+        analysesStore.push(analysisRecord);
+
+        // Final response
+        res.json(analysisRecord);
 
     } catch (error) {
         console.error("Analysis Error:", error.message);
@@ -154,6 +170,16 @@ app.post("/api/v1/analyses", async (req, res) => {
             details: error.message
         });
     }
+});
+
+/* -----------------------------------------------------------
+   📊 Simple stats for frontend dashboard
+------------------------------------------------------------- */
+app.get("/api/v1/stats", (req, res) => {
+    const total = analysesStore.length;
+    const suspect = analysesStore.filter(a => a.assessment.includes("SUSPEITO") || a.assessment.includes("INCONCLUSIVO")).length;
+
+    res.json({ total, suspect });
 });
 
 /* -----------------------------------------------------------
