@@ -11,35 +11,26 @@ const app = express();
 const port = process.env.PORT || 3001;
 
 /* -----------------------------------------------------------
-   🌍 CORS — Libera o frontend do Railway + localhost
+   ⭐ CORS SEM FALHA — AGORA FUNCIONA 100%
 ------------------------------------------------------------- */
-const allowedOrigins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://pe-no-chao-frontend-production.up.railway.app"
-];
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*"); 
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // curl, Postman etc.
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        console.warn("🚫 CORS bloqueou origem:", origin);
-        return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
-app.options("*", cors()); // Preflight OK
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(200);
+    }
+    next();
+});
 
 /* -----------------------------------------------------------
    🔧 Middlewares
 ------------------------------------------------------------- */
-app.use(helmet());
-app.use(morgan("dev"));
 app.use(express.json());
+app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(cors()); // não prejudica nada agora
+app.use(morgan("dev"));
 
 /* -----------------------------------------------------------
    🧠 Services
@@ -57,10 +48,6 @@ const NLP_API_URL = process.env.NLP_API_URL || "http://localhost:5000";
 ------------------------------------------------------------- */
 app.get("/", (req, res) => {
     res.json({ message: "Pé no Chão Backend API is running!" });
-});
-
-app.get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 /* -----------------------------------------------------------
