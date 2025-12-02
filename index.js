@@ -50,66 +50,74 @@ app.post('/api/v1/analyses', async (req, res) => {
     }
 
     try {
-        // 1. GPT extrai premissas, conclusão e fórmulas
+        // 1. GPT extrai premissas, conclusão e formalização
         const gptData = await analyzeWithGPT(text);
 
-        // protege premissas (garante array)
-        const premises = Array.isArray(gptData.premises) ? gptData.premises : [];
-
-        // protege proposições (garante objeto)
-        const propositions = gptData.propositions || {};
-
-        // extrai forma lógica das premissas
-        const formalPremises = premises.map(p => p.formal || null);
-
-        // protege conclusão
+        const formalPremises = gptData.premises.map(p => p.formal);
         const formalConclusion = gptData.conclusion?.formal || null;
 
-        // 2. Análise lógica
+        // 2. Lógica formal
         let logicResult = {
             isValid: false,
-            steps: [],
-            message: "Sem conclusão — não é possível validar argumento lógico"
+            explanation: "Sem conclusão — não é possível testar validade lógica.",
+            steps: []
         };
 
         if (formalConclusion !== null) {
-            logicResult = generator.validate(formalPremises, formalConclusion);
+            const validation = generator.validate(formalPremises, formalConclusion);
+
+            logicResult = {
+                ...validation,
+                explanation: validation.isValid
+                    ? "A conclusão decorre necessariamente das premissas."
+                    : "Existe pelo menos um caso possível onde as premissas são verdadeiras e a conclusão é falsa."
+            };
         }
 
-        // 3. Confiabilidade das premissas com GPT
+        // 3. Confiabilidade factual
         const newsReliability = await Promise.all(
-            premises.map(p => evaluateReliability(p.natural))
+            gptData.premises.map(p => evaluateReliability(p.natural))
         );
 
         const meanReliability =
             newsReliability.reduce((acc, item) => acc + (item.nota_confiabilidade || 0), 0) /
             (newsReliability.length || 1);
 
-        // 4. Veredito geral
-        let verdict = "SUSPEITO";
+        // 4. Veredito final (NOVA REGRA)
+        let verdict = "";
+        let verdictExplanation = "";
 
-        if (logicResult.isValid && meanReliability > 0.75) {
+        if (!logicResult.isValid) {
+            verdict = "ARGUMENTO INVÁLIDO";
+            verdictExplanation = "A estrutura lógica não garante a conclusão.";
+        }
+        else if (logicResult.isValid && meanReliability >= 0.70) {
             verdict = "CONFIÁVEL";
-        } else if (logicResult.isValid && meanReliability >= 0.4) {
-            verdict = "SUSPEITO (confiabilidade parcial)";
-        } else if (meanReliability < 0.4) {
-            verdict = "FALSO OU ENGANOSO";
+            verdictExplanation = "Estrutura lógica válida + conteúdo factual confiável.";
+        }
+        else if (logicResult.isValid && meanReliability >= 0.40) {
+            verdict = "VÁLIDO, MAS FATO SUSPEITO";
+            verdictExplanation = "A estrutura lógica está correta, mas as premissas possuem confiabilidade parcial.";
+        }
+        else if (logicResult.isValid && meanReliability < 0.40) {
+            verdict = "LÓGICO, MAS CONTEÚDO FALSO";
+            verdictExplanation = "A lógica do argumento é válida, porém as premissas têm baixa confiabilidade factual.";
         }
 
         // 5. Resposta final
         res.json({
             input: text,
             gpt: gptData,
-            propositions,
-            premises, // devolve a lista processada
+            propositions: gptData.propositions,
             logic: logicResult,
             noticias: newsReliability,
             confiabilidade_media: meanReliability,
-            verdict
+            verdict,
+            verdictExplanation
         });
 
     } catch (err) {
-        console.error("❌ ERROR:", err);
+        console.error(err);
         res.status(500).json({ error: 'Analysis error', details: err.message });
     }
 });

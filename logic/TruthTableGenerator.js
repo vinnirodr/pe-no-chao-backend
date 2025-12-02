@@ -6,33 +6,58 @@ class TruthTableGenerator {
     }
 
     /**
-     * premisesFormal: array de fórmulas, ex: ["(P -> Q)", "P"]
-     * conclusionFormal: string, ex: "Q"
+     * premisesFormal: array de strings tipo ["(P -> Q)", "P"]
+     * conclusionFormal: string tipo "Q" — pode ser null
      */
     validate(premisesFormal, conclusionFormal) {
         if (!Array.isArray(premisesFormal) || premisesFormal.length === 0) {
-            throw new Error("At least one premise is required");
+            return {
+                isValid: false,
+                explanation: "Não há premissas suficientes para analisar a lógica.",
+                atoms: [],
+                truthTable: [],
+                counterexamples: []
+            };
         }
+
+        // 🌟 NOVO: conclusão opcional
         if (!conclusionFormal) {
-            throw new Error("Conclusion is required");
+            return {
+                isValid: false,
+                explanation: "Sem conclusão — não é possível testar validade lógica.",
+                atoms: [],
+                truthTable: [],
+                counterexamples: []
+            };
         }
 
         // 1. Parse das fórmulas
-        const premiseASTs = premisesFormal.map((f) => this.parser.parse(f));
-        const conclusionAST = this.parser.parse(conclusionFormal);
+        let premiseASTs, conclusionAST;
+        try {
+            premiseASTs = premisesFormal.map((f) => this.parser.parse(f));
+            conclusionAST = this.parser.parse(conclusionFormal);
+        } catch (err) {
+            return {
+                isValid: false,
+                explanation: "Erro ao interpretar fórmulas lógicas.",
+                atoms: [],
+                truthTable: [],
+                counterexamples: []
+            };
+        }
 
-        // 2. Coletar átomos (P, Q, R...)
+        // 2. Coletar variáveis proposicionais (átomos)
         const atomSet = new Set();
         for (const ast of [...premiseASTs, conclusionAST]) {
             this.collectAtoms(ast, atomSet);
         }
-        const atoms = Array.from(atomSet).sort(); // [ "P", "Q", ... ]
+        const atoms = Array.from(atomSet).sort();
 
-        // 3. Gerar tabela verdade
+        // 3. Gerar tabela verdade completa
         const truthTable = [];
         const counterexamples = [];
 
-        const totalRows = 1 << atoms.length; // 2^n
+        const totalRows = 1 << atoms.length; // 2^n combinações
 
         for (let mask = 0; mask < totalRows; mask++) {
             const assignment = {};
@@ -44,9 +69,10 @@ class TruthTableGenerator {
             const premiseValues = premiseASTs.map((ast) =>
                 this.evaluate(ast, assignment)
             );
-            const conclusionValue = this.evaluate(conclusionAST, assignment);
 
+            const conclusionValue = this.evaluate(conclusionAST, assignment);
             const allPremisesTrue = premiseValues.every((v) => v === true);
+
             const validHere = !allPremisesTrue || conclusionValue === true;
 
             const row = {
@@ -59,27 +85,52 @@ class TruthTableGenerator {
 
             truthTable.push(row);
 
+            // Contraexemplo clássico: premissas verdadeiras + conclusão falsa
             if (allPremisesTrue && !conclusionValue) {
                 counterexamples.push({
                     assignment: { ...assignment },
                     premises: premiseValues,
                     conclusion: conclusionValue,
                     explanation:
-                        "Premissas verdadeiras e conclusão falsa neste cenário.",
+                        "Todas as premissas são verdadeiras, mas a conclusão é falsa neste cenário.",
                 });
             }
         }
 
+        // Resultado central
         const isValid = counterexamples.length === 0;
+
+        // Explicação 👇
+        let explanation = "";
+
+        if (isValid) {
+            explanation =
+                "Argumento válido: em nenhuma combinação de valores as premissas são todas verdadeiras enquanto a conclusão é falsa.";
+        } else {
+            explanation =
+                "Argumento inválido: existe pelo menos um cenário possível onde todas as premissas são verdadeiras e a conclusão é falsa.";
+        }
+
+        // 🌟 NOVO: retornar somente um contraexemplo resumido (didático)
+        let example = null;
+        if (counterexamples.length > 0) {
+            example = {
+                descricao: "Cenário que torna o argumento inválido:",
+                valores: counterexamples[0].assignment,
+                premissas: counterexamples[0].premises,
+                conclusao: counterexamples[0].conclusion,
+                explicacao:
+                    "Neste cenário as premissas são verdadeiras, mas a conclusão é falsa — caracterizando invalidade lógica.",
+            };
+        }
 
         return {
             isValid,
             atoms,
             truthTable,
             counterexamples,
-            explanation: isValid
-                ? "Argumento válido: não há caso em que todas as premissas sejam verdadeiras e a conclusão falsa."
-                : "Argumento inválido: existe pelo menos um caso em que todas as premissas são verdadeiras e a conclusão é falsa.",
+            example,
+            explanation,
         };
     }
 
@@ -124,8 +175,7 @@ class TruthTableGenerator {
             case "imp": {
                 const left = this.evaluate(ast.left, env);
                 const right = this.evaluate(ast.right, env);
-                // P -> Q ≡ ¬P ∨ Q
-                return !left || right;
+                return !left || right; // ¬P ∨ Q
             }
 
             case "iff": {
