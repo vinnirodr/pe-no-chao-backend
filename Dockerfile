@@ -2,19 +2,18 @@ FROM node:18
 
 WORKDIR /app
 
-# Copia package.json e package-lock.json
+# Copiar pacotes primeiro
 COPY package*.json ./
 
-# Instala TODAS as dependências (incluindo dev), mas depois remove nodemon
-RUN npm install && npm uninstall nodemon --save-dev || true
+# Instala dependências de produção
+RUN npm ci --omit=dev
 
-# Copia o restante do código
+# Copiar o restante do projeto
 COPY . .
 
-# Porta do backend
+# Railway define automaticamente a variável PORT
 ENV PORT=3001
 
 EXPOSE 3001
 
-# Inicia o backend
 CMD ["node", "index.js"]
