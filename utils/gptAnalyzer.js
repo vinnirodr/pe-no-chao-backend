@@ -4,53 +4,50 @@ const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
-/**
- * Extrai premissas e conclusão + gera justificativas.
- */
 async function analyzeWithGPT(text) {
 
     const prompt = `
-Você é um analisador lógico. Receba o seguinte argumento e:
+Você é um analisador lógico formal. Dado o texto abaixo:
 
-1. Separe em premissas (1 a 3 no máximo).
-2. Identifique a conclusão.
-3. Construa formalmente (P, Q, R, C).
-4. Diga o que cada uma significa (mapa de proposições).
-5. Não invente coisas que não estão no texto.
-6. Retorne SOMENTE JSON válido no formato:
+1. Extraia até 3 premissas.
+2. Extraia a conclusão.
+3. Identifique as proposições atômicas (P, Q, R…).
+4. Converta cada frase em lógica proposicional:
+   - "Se X então Y" → (P -> Q)
+   - "X e Y" → (P ∧ Q)
+   - "X ou Y" → (P ∨ Q)
+   - "Não X" → ¬P
+5. Retorne SOMENTE um JSON válido no formato:
 
 {
   "premises": [
-    { "label": "P", "text": "" },
-    { "label": "Q", "text": "" }
+    { "label": "P1", "natural": "", "formal": "" },
+    { "label": "P2", "natural": "", "formal": "" }
   ],
-  "conclusion": { "label": "C", "text": "" },
-  "propositions": {
+  "conclusion": { "label": "C", "natural": "", "formal": "" },
+
+  "atoms": {
     "P": "",
     "Q": "",
-    "C": ""
+    "R": ""
   }
 }
+
+NÃO explique nada. NÃO escreva comentários.
+NÃO invente fatos. Apenas transforme o texto em lógica proposicional.
 
 Texto: ${text}
 `;
 
     const response = await client.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-            { role: "user", content: prompt }
-        ],
+        messages: [{ role: "user", content: prompt }],
         temperature: 0
     });
 
     const raw = response.choices[0].message.content.trim();
 
-    try {
-        return JSON.parse(raw);
-    } catch (err) {
-        console.error("Erro ao parsear JSON do GPT:", raw);
-        throw new Error("GPT returned invalid JSON");
-    }
+    return JSON.parse(raw);
 }
 
 module.exports = analyzeWithGPT;
