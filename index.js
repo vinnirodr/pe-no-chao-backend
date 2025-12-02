@@ -6,7 +6,6 @@ const morgan = require('morgan');
 const axios = require('axios');
 
 const TruthTableGenerator = require('./logic/TruthTableGenerator');
-const FactChecker = require('./services/FactChecker');
 const analyzeWithGPT = require('./utils/gptAnalyzer');
 const evaluateReliability = require('./utils/gptNewsReliability');
 
@@ -19,7 +18,6 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 const generator = new TruthTableGenerator();
-const factChecker = new FactChecker();
 
 /* -----------------------------------------------------------
    🔵 Health
@@ -40,25 +38,6 @@ app.post('/api/v1/validate-logic', (req, res) => {
 
     const result = generator.validate(premises, conclusion);
     res.json(result);
-});
-
-/* -----------------------------------------------------------
-   🔎 Fact-check
-------------------------------------------------------------- */
-app.post('/api/v1/fact-check', async (req, res) => {
-    const { premise } = req.body;
-
-    if (!premise) {
-        return res.status(400).json({ error: 'Missing premise' });
-    }
-
-    try {
-        const result = await factChecker.verify(premise);
-        res.json(result);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Fact-check error', details: err.message });
-    }
 });
 /* -----------------------------------------------------------
    🧠 Análise completa (GPT + lógica formal + fact-check + notícias)
