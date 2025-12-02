@@ -6,32 +6,47 @@ const client = new OpenAI({
 
 async function analyzeWithGPT(text) {
     const prompt = `
-Você é um especialista em lógica proposicional.
+Você é um analisador lógico formal.
 
-Receba o argumento abaixo e retorne APENAS JSON válido, seguindo exatamente este formato:
+Receba o texto abaixo e retorne **APENAS JSON válido**, seguindo exatamente o formato:
 
 {
   "premises": [
-    { "label": "P", "natural": "", "formal": "", "tipo": "" },
-    { "label": "Q", "natural": "", "formal": "", "tipo": "" }
+    { "label": "P", "natural": "", "formal": "", "type": "" }
   ],
-  "conclusion": { "label": "C", "natural": "", "formal": "", "tipo": "" },
+  "conclusion": null,
   "propositions": {
-    "P": "",
-    "Q": "",
-    "C": ""
+    "P": { "natural": "", "formal": "", "type": "" }
   }
 }
 
 REGRAS IMPORTANTES:
-1. "tipo" pode ser: "simples", "condicional", "conjunção", "disjunção", "bicondicional", "negação".
-2. "formal" deve usar símbolos lógicos (→, ∧, ∨, ¬, ↔).
-3. Premissas devem ser extraídas SOMENTE do texto — não invente.
-4. Use no máximo 3 premissas.
-5. SEMPRE retornar JSON puro — sem explicações extras.
-6. "propositions" deve mapear label -> frase natural correspondente.
 
-Argumento:
+1. Se o texto **não possuir estrutura argumentativa** (não contém "portanto", "logo", "então", "assim", "por conseguinte"), 
+   então:
+   - Use **apenas 1 proposição** (P).
+   - "conclusion" deve ser **null**.
+   - Não crie Q ou C.
+
+2. Se houver estrutura de argumento, então:
+   - Use até 3 premissas (P, Q, R).
+   - Gere "conclusion" com o label "C".
+   - Repita cada uma dentro de "propositions".
+
+3. "natural" = frase literal extraída do texto.
+4. "formal" = versão em lógica proposicional (ex: "P", "Q", "(P → Q)", "(P ∧ Q)").
+5. "type" = classificar a proposição:
+   - "simples"
+   - "condicional"
+   - "conjunção"
+   - "disjunção"
+   - "negação"
+   - "bicondicional"
+   - etc.
+6. Não invente informação além do texto.
+7. Retorne apenas JSON puro.
+
+Texto:
 ${text}
 `;
 
@@ -46,7 +61,7 @@ ${text}
     try {
         return JSON.parse(raw);
     } catch (err) {
-        console.error("❌ Erro ao parsear JSON do GPT:", raw);
+        console.error("Erro ao parsear JSON do GPT:", raw);
         throw new Error("GPT returned invalid JSON");
     }
 }
