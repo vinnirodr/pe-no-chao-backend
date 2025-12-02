@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const axios = require('axios');
 
 const TruthTableGenerator = require('./logic/TruthTableGenerator');
 const analyzeWithGPT = require('./utils/gptAnalyzer');
@@ -39,8 +38,9 @@ app.post('/api/v1/validate-logic', (req, res) => {
     const result = generator.validate(premises, conclusion);
     res.json(result);
 });
+
 /* -----------------------------------------------------------
-   🧠 Análise completa (GPT + lógica formal + fact-check + notícias)
+   🧠 Análise completa (GPT + lógica formal)
 ------------------------------------------------------------- */
 app.post('/api/v1/analyses', async (req, res) => {
     const { text } = req.body;
@@ -50,22 +50,16 @@ app.post('/api/v1/analyses', async (req, res) => {
     }
 
     try {
-        // 1. GPT: extrai premissas, conclusão e fórmulas formais
+        // 1. GPT extrai premissas, conclusão e fórmulas
         const gptData = await analyzeWithGPT(text);
 
         const formalPremises = gptData.premises.map(p => p.formal);
         const formalConclusion = gptData.conclusion.formal;
 
-        // 2. Lógica formal com tabela-verdade
+        // 2. Análise lógica
         const logicResult = generator.validate(formalPremises, formalConclusion);
 
-        // 3. Fact-check (em cima das premissas NATURAIS)
-        const factCheck = await Promise.all(
-            gptData.premises.map(p => factChecker.verify(p.natural))
-        );
-        const allVerified = factCheck.every(x => x.verified);
-
-        // 4. "Notícias" / confiabilidade factual simulada baseada em fontes
+        // 3. "Confiabilidade" com GPT simulando análise baseada em fontes
         const newsReliability = await Promise.all(
             gptData.premises.map(p => evaluateReliability(p.natural))
         );
@@ -74,25 +68,22 @@ app.post('/api/v1/analyses', async (req, res) => {
             newsReliability.reduce((acc, item) => acc + (item.nota_confiabilidade || 0), 0) /
             (newsReliability.length || 1);
 
-        // 5. Veredito geral ponderado
+        // 4. Veredito geral
         let verdict = "SUSPEITO";
 
-        if (logicResult.isValid && allVerified && meanReliability > 0.75) {
+        if (logicResult.isValid && meanReliability > 0.75) {
             verdict = "CONFIÁVEL";
         } else if (logicResult.isValid && meanReliability >= 0.4) {
             verdict = "SUSPEITO (confiabilidade parcial)";
         } else if (meanReliability < 0.4) {
             verdict = "FALSO OU ENGANOSO";
-        } else if (!allVerified) {
-            verdict = "INCONCLUSIVO";
         }
 
-        // 6. Resposta organizada
+        // 5. Resposta final
         res.json({
             input: text,
             gpt: gptData,
             logic: logicResult,
-            fact_check: factCheck,
             noticias: newsReliability,
             confiabilidade_media: meanReliability,
             verdict
