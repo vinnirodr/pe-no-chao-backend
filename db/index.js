@@ -4,12 +4,9 @@ const path = require('path');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: { rejectUnauthorized: false }
 });
 
-// Initialize DB
 const initDb = async () => {
     try {
         const schemaPath = path.join(__dirname, 'schema.sql');
@@ -17,7 +14,8 @@ const initDb = async () => {
         await pool.query(schema);
         console.log('Database initialized successfully');
     } catch (err) {
-        console.error('Error initializing database', err);
+        console.error('⚠ Erro ao inicializar banco:', err.message);
+        // Não derrubamos o servidor
     }
 };
 

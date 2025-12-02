@@ -21,34 +21,20 @@ app.use(express.json());
 const generator = new TruthTableGenerator();
 const factChecker = new FactChecker();
 
-// NLP endpoint (Python API ou outro serviço)
+// NLP endpoint
 const NLP_API_URL = process.env.NLP_API_URL || 'http://localhost:5000';
 
-// Inicializa o banco
-initDb();
+// Inicializar banco sem derrubar servidor no Railway
+initDb()
+  .then(() => console.log("DB init OK"))
+  .catch(err => {
+      console.error("⚠ Erro ao inicializar banco:", err.message);
+      // Não derrubar o servidor!
+  });
 
-/* -----------------------------------------------------------
-   💬 Veredito baseado nas fontes do Perplexity (campo factual)
-------------------------------------------------------------- */
-function gerarVereditoFontes(nlpData) {
-    if (!nlpData || !nlpData.factual) {
-        return 'As fontes consultadas não foram suficientes para determinar verdade ou falsidade.';
-    }
-
-    if (nlpData.factual === 'falso') {
-        return 'De acordo com as fontes consultadas (Perplexity), a conclusão é falsa.';
-    }
-
-    if (nlpData.factual === 'verdadeiro') {
-        return 'De acordo com as fontes consultadas (Perplexity), a conclusão é verdadeira.';
-    }
-
-    return 'Não foi possível determinar a veracidade da conclusão com base nas fontes consultadas.';
-}
-
-/* -----------------------------------------------------------
-   🔵 Health check
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* HEALTH CHECK */
+/* ----------------------------------------------------------- */
 app.get('/', (req, res) => {
     res.json({ message: 'Pé no Chão Backend API is running!' });
 });
@@ -57,9 +43,9 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-/* -----------------------------------------------------------
-   🔍 Validação lógica pura
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* LÓGICA PURA */
+/* ----------------------------------------------------------- */
 app.post('/api/v1/validate-logic', (req, res) => {
     const { premises, conclusion } = req.body;
 
@@ -71,9 +57,9 @@ app.post('/api/v1/validate-logic', (req, res) => {
     res.json(result);
 });
 
-/* -----------------------------------------------------------
-   🔎 Fact-check individual de uma premissa
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* FACT-CHECK DE PREMISSA */
+/* ----------------------------------------------------------- */
 app.post('/api/v1/fact-check', async (req, res) => {
     const { premise } = req.body;
 
@@ -90,9 +76,9 @@ app.post('/api/v1/fact-check', async (req, res) => {
     }
 });
 
-/* -----------------------------------------------------------
-   🧠 Análise completa (NLP + lógica + fact-check + veredito)
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* ANÁLISE COMPLETA */
+/* ----------------------------------------------------------- */
 app.post('/api/v1/analyses', async (req, res) => {
     const { text } = req.body;
 
@@ -103,18 +89,13 @@ app.post('/api/v1/analyses', async (req, res) => {
     try {
         console.log(`Analyzing text: ${text.substring(0, 80)}...`);
 
-        /* -----------------------
-           1. NLP Extraction
-        ------------------------ */
+        // NLP
         let nlpData;
-
         try {
             const nlpRes = await axios.post(`${NLP_API_URL}/analyze`, { text });
             nlpData = nlpRes.data;
         } catch (e) {
-            console.warn('⚠ NLP API não respondeu — usando fallback simples.', e.message);
-
-            // Fallback básico para não quebrar a API caso o serviço NLP esteja fora
+            console.warn('⚠ NLP API não respondeu — usando fallback.', e.message);
             nlpData = {
                 premises: [{ text }],
                 conclusion: { text: 'Conclusão não identificada automaticamente (fallback).' },
@@ -123,59 +104,46 @@ app.post('/api/v1/analyses', async (req, res) => {
             };
         }
 
-        // Garantir que premissas exista e seja array
-        if (!Array.isArray(nlpData.premises) || nlpData.premises.length === 0) {
+        // Garantir premissas válidas
+        if (!Array.isArray(nlpData.premises)) {
             nlpData.premises = [{ text }];
         }
 
-        /* -----------------------
-           2. Logic Validation
-        ------------------------ */
+        // Validação lógica
         const logicResult = generator.validate(
             nlpData.premises.map(p => p.text),
             nlpData.conclusion ? nlpData.conclusion.text : 'Unknown'
         );
 
-        /* -----------------------
-           3. Fact Checking (paralelo)
-        ------------------------ */
+        // Fact-check paralelo
         const factCheckResults = await Promise.all(
             nlpData.premises.map(p => factChecker.verify(p.text))
         );
 
-        /* -----------------------
-           4. Overall Assessment
-        ------------------------ */
+        // Avaliação geral
         const allPremisesVerified = factCheckResults.every(r => r.verified);
         let assessment = 'SUSPEITO';
 
-        if (logicResult.isValid && allPremisesVerified) {
-            assessment = 'CONFIÁVEL';
-        } else if (!logicResult.isValid && allPremisesVerified) {
-            assessment = 'SUSPEITO (Salto Lógico)';
-        } else if (!allPremisesVerified) {
-            assessment = 'INCONCLUSIVO / FALSO';
+        if (logicResult.isValid && allPremisesVerified) assessment = 'CONFIÁVEL';
+        else if (!logicResult.isValid && allPremisesVerified) assessment = 'SUSPEITO (Salto Lógico)';
+        else if (!allPremisesVerified) assessment = 'INCONCLUSIVO / FALSO';
+
+        // Veredito baseado no Perplexity
+        function gerarVereditoFontes(nlp) {
+            if (!nlp || !nlp.factual) return 'Fontes insuficientes.';
+            if (nlp.factual === 'falso') return 'Conclusão falsa segundo as fontes.';
+            if (nlp.factual === 'verdadeiro') return 'Conclusão verdadeira segundo as fontes.';
+            return 'Não foi possível determinar pelas fontes.';
         }
 
-        /* -----------------------
-           4.5 Veredito com base nas fontes (Perplexity)
-        ------------------------ */
         const vereditoFontes = gerarVereditoFontes(nlpData);
 
-        /* -----------------------
-           5. Persistência em banco
-        ------------------------ */
+        // Persistência
         const insertQuery = `
             INSERT INTO analyses (
-                input_text,
-                premises,
-                conclusion,
-                validity,
-                result_type,
-                fact_check_results,
-                overall_assessment
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                input_text, premises, conclusion, validity,
+                result_type, fact_check_results, overall_assessment
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7)
             RETURNING id, created_at
         `;
 
@@ -189,9 +157,6 @@ app.post('/api/v1/analyses', async (req, res) => {
             assessment
         ]);
 
-        /* -----------------------
-           6. Resposta final da API
-        ------------------------ */
         res.json({
             id: dbRes.rows[0].id,
             created_at: dbRes.rows[0].created_at,
@@ -205,49 +170,44 @@ app.post('/api/v1/analyses', async (req, res) => {
 
     } catch (error) {
         console.error('Analysis Error:', error.message);
-        res.status(500).json({
-            error: 'Internal Server Error',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
 });
 
-/* -----------------------------------------------------------
-   📊 Últimas análises
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* LISTAR ÚLTIMAS ANÁLISES */
+/* ----------------------------------------------------------- */
 app.get('/api/v1/analyses', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM analyses ORDER BY created_at DESC LIMIT 10');
         res.json(result.rows);
     } catch (error) {
-        console.error('DB Error (/analyses):', error.message);
+        console.error('DB Error:', error.message);
         res.status(500).json({ error: 'Database Error' });
     }
 });
 
-/* -----------------------------------------------------------
-   📈 Estatísticas
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* ESTATÍSTICAS */
+/* ----------------------------------------------------------- */
 app.get('/api/v1/stats', async (req, res) => {
     try {
-        const totalRes = await pool.query('SELECT COUNT(*) FROM analyses');
-        const suspectRes = await pool.query(
-            "SELECT COUNT(*) FROM analyses WHERE overall_assessment LIKE '%SUSPEITO%'"
-        );
+        const total = await pool.query('SELECT COUNT(*) FROM analyses');
+        const suspect = await pool.query("SELECT COUNT(*) FROM analyses WHERE overall_assessment LIKE '%SUSPEITO%'");
 
         res.json({
-            total: Number(totalRes.rows[0].count),
-            suspect: Number(suspectRes.rows[0].count)
+            total: Number(total.rows[0].count),
+            suspect: Number(suspect.rows[0].count)
         });
     } catch (error) {
-        console.error('DB Error (/stats):', error.message);
+        console.error('DB Error:', error.message);
         res.status(500).json({ error: 'Database Error' });
     }
 });
 
-/* -----------------------------------------------------------
-   🚀 Start Server
-------------------------------------------------------------- */
+/* ----------------------------------------------------------- */
+/* START SERVER */
+/* ----------------------------------------------------------- */
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
